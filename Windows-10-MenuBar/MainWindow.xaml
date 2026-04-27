@@ -1,0 +1,715 @@
+<Window x:Class="Windows_10_MenuBar.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:vm="clr-namespace:Windows_10_MenuBar.ViewModels"
+        Title="MenuBar" Height="32" Width="800"
+        WindowStyle="None" AllowsTransparency="True" Topmost="True" ResizeMode="NoResize" ShowInTaskbar="False"
+        Foreground="White"
+        FontFamily="Segoe UI Variable, Segoe UI, sans-serif"
+        MouseRightButtonUp="Window_MouseRightButtonUp">
+    <Window.Background>
+        <SolidColorBrush x:Name="BarBrush" Color="#1A1A1A" Opacity="0.92"/>
+    </Window.Background>
+    
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- Tray Button Style (normal button) -->
+        <Style x:Key="TrayBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="5" Padding="7,0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard><Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="#20FFFFFF" Duration="0:0:0.12"/>
+                                    </Storyboard></BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard><Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="Transparent" Duration="0:0:0.2"/>
+                                    </Storyboard></BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#30FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Tray Box Style (for Border elements like Battery/Time) -->
+        <Style x:Key="TrayBox" TargetType="Border">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="5"/>
+            <Setter Property="Padding" Value="7,0"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#20FFFFFF"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Tray ToggleButton Style -->
+        <Style x:Key="TrayToggleBtn" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="5" Padding="7,0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard><Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="#20FFFFFF" Duration="0:0:0.12"/>
+                                    </Storyboard></BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard><Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="Bg" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="Transparent" Duration="0:0:0.2"/>
+                                    </Storyboard></BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#28FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#35FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Popup Panel Base Style -->
+        <Style x:Key="PopupBorder" TargetType="Border">
+            <Setter Property="Background" Value="#EE111111"/>
+            <Setter Property="BorderBrush" Value="#40FFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect BlurRadius="28" Opacity="0.55" ShadowDepth="4" Color="#000000"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ListBox Item Hover -->
+        <Style x:Key="HoverListBoxItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="6" Padding="6,5">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard><Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="Border" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="#18FFFFFF" Duration="0:0:0.12"/>
+                                    </Storyboard></BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard><Storyboard>
+                                        <ColorAnimation Storyboard.TargetName="Border" Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" To="Transparent" Duration="0:0:0.2"/>
+                                    </Storyboard></BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Settings Section Label -->
+        <Style x:Key="SectionLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#666"/>
+            <Setter Property="Margin" Value="0,12,0,6"/>
+        </Style>
+
+        <!-- Settings Row Label -->
+        <Style x:Key="RowLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Foreground" Value="#E0E0E0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <!-- Theme Chip Button -->
+        <Style x:Key="ThemeChip" TargetType="Button">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Margin" Value="0,0,5,5"/>
+            <Setter Property="Padding" Value="11,5"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Ch" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Ch" Property="BorderBrush" Value="#88FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Ch" Property="Opacity" Value="0.75"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Background="Transparent">
+        <Grid.ContextMenu>
+            <ContextMenu Background="#E6202020" Foreground="White" BorderThickness="1" BorderBrush="#33FFFFFF">
+                <MenuItem Header="⚙ Ayarlar" Click="OpenSettings_Click"/>
+                <MenuItem Header="Çıkış" Click="BtnClose_Click" Foreground="#FF5555"/>
+            </ContextMenu>
+        </Grid.ContextMenu>
+
+        <!-- Settings Popup (right-click) -->
+        <Popup x:Name="SettingsPopup" StaysOpen="False" Placement="Bottom"
+               PlacementTarget="{Binding ElementName=SettingsPopup}"
+               AllowsTransparency="True" PopupAnimation="Fade">
+            <Border Style="{StaticResource PopupBorder}" Width="370" MaxHeight="580" Padding="20,16">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <!-- Header -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                            <ui:SymbolIcon Symbol="Settings24" FontSize="20" Foreground="#3366FF" Margin="0,0,10,0"/>
+                            <TextBlock Text="Ayarlar" FontWeight="Bold" FontSize="17" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- APPEARANCE -->
+                        <TextBlock Text="GÖRÜNÜM" Style="{StaticResource SectionLabel}"/>
+
+                        <!-- Theme Buttons -->
+                        <TextBlock Text="Hazır Temalar" FontSize="12" Foreground="#AAA" Margin="0,0,0,8"/>
+                        <WrapPanel Margin="0,0,0,14">
+                            <Button Content="Dark" Style="{StaticResource ThemeChip}" Background="#1A1A1A" BorderBrush="#444"
+                                    Command="{Binding ApplyThemeCommand}" CommandParameter="Dark"/>
+                            <Button Content="Midnight" Style="{StaticResource ThemeChip}" Background="#0D0D1A" BorderBrush="#2A2A4A"
+                                    Command="{Binding ApplyThemeCommand}" CommandParameter="Midnight"/>
+                            <Button Content="Blue" Style="{StaticResource ThemeChip}" Background="#0D1A2A" BorderBrush="#2A4A6A"
+                                    Command="{Binding ApplyThemeCommand}" CommandParameter="Blue Tint"/>
+                            <Button Content="Purple" Style="{StaticResource ThemeChip}" Background="#1A0D2A" BorderBrush="#4A2A6A"
+                                    Command="{Binding ApplyThemeCommand}" CommandParameter="Purple"/>
+                            <Button Content="Forest" Style="{StaticResource ThemeChip}" Background="#0D1A0D" BorderBrush="#2A4A2A"
+                                    Command="{Binding ApplyThemeCommand}" CommandParameter="Forest"/>
+                            <Button Content="Glass" Style="{StaticResource ThemeChip}" Background="#333333" BorderBrush="#555"
+                                    Command="{Binding ApplyThemeCommand}" CommandParameter="Glass"/>
+                            <Button Content="🖼 Duvar Kağıdı" Style="{StaticResource ThemeChip}" Background="#2A2A3A" BorderBrush="#5566FF"
+                                    Command="{Binding ApplyThemeCommand}" CommandParameter="Auto"/>
+                        </WrapPanel>
+
+                        <!-- HEX Color -->
+                        <TextBlock Text="Özel Renk (HEX)" FontSize="12" Foreground="#AAA" Margin="0,0,0,6"/>
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Background="#1AFFFFFF" CornerRadius="6">
+                                <TextBox x:Name="TxtHexColor" Background="Transparent" Foreground="White" BorderThickness="0"
+                                         Padding="8,6" FontSize="12.5"
+                                         Text="{Binding Settings.CustomHexColor, UpdateSourceTrigger=PropertyChanged}"/>
+                            </Border>
+                            <Button Grid.Column="1" Content="Uygula" Margin="8,0,0,0" Padding="14,6"
+                                    Background="#3366FF" Foreground="White" BorderThickness="0"
+                                    Command="{Binding ApplyThemeCommand}" CommandParameter="Custom"
+                                    Cursor="Hand">
+                                <Button.Resources>
+                                    <Style TargetType="Border">
+                                        <Setter Property="CornerRadius" Value="6"/>
+                                    </Style>
+                                </Button.Resources>
+                            </Button>
+                        </Grid>
+
+                        <!-- Opacity -->
+                        <TextBlock Text="Saydamlık" Style="{StaticResource RowLabel}" Margin="0,0,0,4"/>
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="45"/>
+                            </Grid.ColumnDefinitions>
+                            <Slider Grid.Column="0" Minimum="0.3" Maximum="1.0" SmallChange="0.05"
+                                    Value="{Binding BarOpacity, Mode=TwoWay}"
+                                    VerticalAlignment="Center"
+                                    ValueChanged="OpacitySlider_Changed"/>
+                            <TextBlock Grid.Column="1" FontSize="11" Foreground="#888" VerticalAlignment="Center" Margin="8,0,0,0"
+                                       Text="{Binding BarOpacity, StringFormat='{}{0:P0}'}" HorizontalAlignment="Right"/>
+                        </Grid>
+
+                        <!-- Bar Height -->
+                        <TextBlock Text="Bar Yüksekliği" Style="{StaticResource RowLabel}" Margin="0,0,0,4"/>
+                        <Grid Margin="0,0,0,18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="45"/>
+                            </Grid.ColumnDefinitions>
+                            <Slider Grid.Column="0" Minimum="24" Maximum="44" SmallChange="2" IsSnapToTickEnabled="True" TickFrequency="2"
+                                    Value="{Binding Settings.BarHeight, Mode=TwoWay}"
+                                    VerticalAlignment="Center"
+                                    ValueChanged="HeightSlider_Changed"/>
+                            <TextBlock Grid.Column="1" FontSize="11" Foreground="#888" VerticalAlignment="Center" Margin="8,0,0,0"
+                                       Text="{Binding Settings.BarHeight, StringFormat='{}{0:F0}px'}" HorizontalAlignment="Right"/>
+                        </Grid>
+
+                        <!-- Separator -->
+                        <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,0,0,14"/>
+
+                        <!-- BEHAVIOR -->
+                        <TextBlock Text="DAVRANIŞ" Style="{StaticResource SectionLabel}"/>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="24 Saat Formatı" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.Use24HourClock, Mode=TwoWay}"
+                                            Click="Settings_Changed"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Otomatik Gizle" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.AutoHide, Mode=TwoWay}"
+                                            Click="AutoHide_Changed"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,18">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Windows ile Başlat" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.StartWithWindows, Mode=TwoWay}"
+                                            Click="StartWithWindows_Changed"/>
+                        </Grid>
+
+                        <!-- Separator -->
+                        <Rectangle Height="1" Fill="#15FFFFFF" Margin="0,0,0,14"/>
+
+                        <!-- ICONS -->
+                        <TextBlock Text="İKONLAR" Style="{StaticResource SectionLabel}"/>
+
+                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Bluetooth" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.ShowBluetooth, Mode=TwoWay}" Click="Settings_Changed"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Wi-Fi" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.ShowWifi, Mode=TwoWay}" Click="Settings_Changed"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Pil" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.ShowBattery, Mode=TwoWay}" Click="Settings_Changed"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="VPN" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.ShowVpn, Mode=TwoWay}" Click="Settings_Changed"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Mikrofon Göstergesi" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.ShowMicrophone, Mode=TwoWay}" Click="Settings_Changed"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Kamera Göstergesi" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.ShowCamera, Mode=TwoWay}" Click="Settings_Changed"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Medya Kontrolü" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.ShowMedia, Mode=TwoWay}" Click="Settings_Changed"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Parlaklık" Style="{StaticResource RowLabel}"/>
+                            <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.ShowBrightness, Mode=TwoWay}" Click="Settings_Changed"/>
+                        </Grid>
+
+                        <!-- Close Button -->
+                        <Button Content="Kapat" Padding="0,10" Background="#25FF3B30" Foreground="#FF3B30"
+                                BorderBrush="#40FF3B30" BorderThickness="1"
+                                Click="CloseSettings_Click" Cursor="Hand" HorizontalAlignment="Stretch">
+                            <Button.Resources>
+                                <Style TargetType="Border">
+                                    <Setter Property="CornerRadius" Value="8"/>
+                                </Style>
+                            </Button.Resources>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Popup>
+
+        <!-- CENTER LAYER: Strictly centered Media Controls -->
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal" Visibility="{Binding CurrentMedia.IsPlaying, Converter={StaticResource BoolToVis}}" MaxWidth="500">
+            <ui:Button Appearance="Transparent" Padding="4,0" Foreground="White" Command="{Binding PreviousMediaCommand}" Margin="0,0,8,0">
+                <ui:SymbolIcon Symbol="Previous24" FontSize="14"/>
+            </ui:Button>
+            <ui:Button Appearance="Transparent" Padding="4,0" Foreground="White" Command="{Binding PlayPauseMediaCommand}" Margin="0,0,8,0">
+                <ui:SymbolIcon Symbol="Play24" FontSize="16"/>
+            </ui:Button>
+            <ui:Button Appearance="Transparent" Padding="4,0" Foreground="White" Command="{Binding NextMediaCommand}" Margin="0,0,12,0">
+                <ui:SymbolIcon Symbol="Next24" FontSize="14"/>
+            </ui:Button>
+            <TextBlock Text="{Binding CurrentMedia.Title}" FontWeight="SemiBold" FontSize="12" Margin="0,0,4,0" TextTrimming="CharacterEllipsis" MaxWidth="150" VerticalAlignment="Center"/>
+            <TextBlock Text="-" FontSize="12" Foreground="#888888" Margin="0,0,4,0" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding CurrentMedia.Artist}" FontSize="12" Foreground="#AAAAAA" TextTrimming="CharacterEllipsis" MaxWidth="150" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- LEFT & RIGHT LAYER -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: Logo and Active Window Title only -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" Margin="10,0">
+                <ui:SymbolIcon Symbol="Grid24" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="{Binding ActiveWindowTitle, NotifyOnTargetUpdated=True}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="250">
+                    <TextBlock.Triggers>
+                        <EventTrigger RoutedEvent="Binding.TargetUpdated">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.3" To="1" Duration="0:0:0.4"/>
+                                    <ThicknessAnimation Storyboard.TargetProperty="Margin" From="10,0,0,0" To="0,0,0,0" Duration="0:0:0.3">
+                                        <ThicknessAnimation.EasingFunction>
+                                            <QuadraticEase EasingMode="EaseOut"/>
+                                        </ThicknessAnimation.EasingFunction>
+                                    </ThicknessAnimation>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </TextBlock.Triggers>
+                </TextBlock>
+            </StackPanel>
+
+            <!-- RIGHT: Tray Icons, Date, Time -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right"
+                        VerticalAlignment="Stretch" Margin="6,0">
+
+                <!-- Task View -->
+                <Button Style="{StaticResource TrayBtn}" Margin="0,0,1,0"
+                        Command="{Binding OpenTaskViewCommand}" ToolTip="Görev Görünümü">
+                    <ui:SymbolIcon Symbol="TabDesktop24" FontSize="15" Foreground="#BBBBBB"/>
+                </Button>
+
+                <!-- Virtual Desktops -->
+                <Button Style="{StaticResource TrayBtn}" Margin="0,0,1,0"
+                        Command="{Binding OpenVirtualDesktopsCommand}" ToolTip="Sanal Masaüstleri">
+                    <ui:SymbolIcon Symbol="DesktopFlow24" FontSize="15" Foreground="#BBBBBB"/>
+                </Button>
+
+                <!-- Screenshot -->
+                <Button Style="{StaticResource TrayBtn}" Margin="0,0,6,0"
+                        Command="{Binding TakeScreenshotCommand}" ToolTip="Ekran Görüntüsü">
+                    <ui:SymbolIcon Symbol="Screenshot24" FontSize="15" Foreground="#BBBBBB"/>
+                </Button>
+
+                <!-- Separator -->
+                <Rectangle Width="1" Height="14" Fill="#25FFFFFF" Margin="0,0,6,0" VerticalAlignment="Center"/>
+
+                <!-- Bluetooth -->
+                <ToggleButton x:Name="BtnBluetooth" Style="{StaticResource TrayToggleBtn}" Margin="0,0,1,0"
+                              ToolTip="Bluetooth">
+                    <ui:SymbolIcon Symbol="Bluetooth24" FontSize="15" Foreground="#99CCFF"/>
+                </ToggleButton>
+                <Popup IsOpen="{Binding IsChecked, ElementName=BtnBluetooth}" StaysOpen="False"
+                       PlacementTarget="{Binding ElementName=BtnBluetooth}" Placement="Bottom"
+                       VerticalOffset="6" AllowsTransparency="True" PopupAnimation="Fade">
+                    <Border Style="{StaticResource PopupBorder}" Width="290" Padding="16,14">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <ui:SymbolIcon Symbol="Bluetooth24" FontSize="20" Foreground="#99CCFF" Margin="0,0,8,0"/>
+                                <TextBlock Text="Bluetooth" FontWeight="Bold" FontSize="15" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <ListBox ItemsSource="{Binding BluetoothDevices}"
+                                     ItemContainerStyle="{StaticResource HoverListBoxItemStyle}"
+                                     Background="Transparent" BorderThickness="0" Foreground="White"
+                                     MaxHeight="280" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,1" Background="Transparent">
+                                            <Grid.InputBindings>
+                                                <MouseBinding MouseAction="LeftClick" Command="{Binding DataContext.ToggleBluetoothPairingCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                            </Grid.InputBindings>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Background="#1599CCFF" CornerRadius="4" Padding="4" Margin="0,0,10,0" Grid.Column="0">
+                                                <ui:SymbolIcon Symbol="Bluetooth24" FontSize="14" Foreground="#99CCFF"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding Name}" Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12.5"/>
+                                            <Border Grid.Column="2" Background="#22FFFFFF" CornerRadius="4" Padding="5,2" Margin="8,0,0,0">
+                                                <TextBlock Text="{Binding StatusText}" FontSize="10" Foreground="#AAAAAA" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+                
+                <!-- Wi-Fi -->
+                <ToggleButton x:Name="BtnWifi" Style="{StaticResource TrayToggleBtn}" Margin="0,0,4,0"
+                              ToolTip="Wi-Fi">
+                    <ui:SymbolIcon Symbol="{Binding CurrentNetworkIcon}" FontSize="15" Foreground="White"/>
+                </ToggleButton>
+                <Popup IsOpen="{Binding IsChecked, ElementName=BtnWifi}" Closed="PopupWifi_Closed"
+                       StaysOpen="False" PlacementTarget="{Binding ElementName=BtnWifi}"
+                       Placement="Bottom" VerticalOffset="6" AllowsTransparency="True" PopupAnimation="Fade">
+                    <Border Style="{StaticResource PopupBorder}" Width="310" Padding="16,14">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <ui:SymbolIcon Symbol="{Binding CurrentNetworkIcon}" FontSize="20" Foreground="White" Margin="0,0,8,0"/>
+                                <TextBlock Text="Ağ Bağlantıları" FontWeight="Bold" FontSize="15" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <ListBox ItemsSource="{Binding AvailableNetworks}"
+                                     ItemContainerStyle="{StaticResource HoverListBoxItemStyle}"
+                                     Background="Transparent" BorderThickness="0" Foreground="White"
+                                     MaxHeight="300" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,1" Background="Transparent">
+                                            <Grid>
+                                                <Grid.ContextMenu>
+                                                    <ContextMenu Background="#E6181818" Foreground="White" BorderThickness="1" BorderBrush="#33FFFFFF">
+                                                        <MenuItem Header="Ağı Unut" Command="{Binding DataContext.ForgetWifiCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Foreground="#FF5555"/>
+                                                    </ContextMenu>
+                                                </Grid.ContextMenu>
+                                                <Grid.InputBindings>
+                                                    <MouseBinding MouseAction="LeftClick" Command="{Binding DataContext.SelectWifiCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                    <MouseBinding MouseAction="LeftDoubleClick" Command="{Binding DataContext.DisconnectWifiCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                </Grid.InputBindings>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ui:SymbolIcon Symbol="{Binding SignalIcon}" Margin="0,0,10,0" Grid.Column="0" FontSize="16"/>
+                                                <TextBlock Text="{Binding Ssid}" Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12.5" FontWeight="SemiBold"/>
+                                                <Border Grid.Column="2" CornerRadius="4" Padding="5,2" Margin="8,0,0,0">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="Transparent"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding StatusText}" Value="Bağlı">
+                                                                    <Setter Property="Background" Value="#2234C759"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="{Binding StatusText}" FontSize="10" VerticalAlignment="Center">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="#888"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding StatusText}" Value="Bağlı">
+                                                                        <Setter Property="Foreground" Value="#34C759"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Border>
+                                            </Grid>
+                                            <!-- Password Prompt -->
+                                            <Border Margin="34,8,0,2" CornerRadius="6" Background="#12FFFFFF"
+                                                    Padding="10,8"
+                                                    Visibility="{Binding IsPasswordPromptVisible, Converter={StaticResource BoolToVis}}">
+                                                <StackPanel>
+                                                    <TextBlock Text="Ağ Şifresi" FontSize="11" Margin="0,0,0,6" Foreground="#AAAAAA" FontWeight="SemiBold"/>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Grid.Column="0" Background="#1AFFFFFF" CornerRadius="5" Margin="0,0,6,0">
+                                                            <PasswordBox x:Name="TxtPassword" Background="Transparent" Foreground="White"
+                                                                         BorderThickness="0" Padding="6,4" FontSize="12">
+                                                                <PasswordBox.InputBindings>
+                                                                    <KeyBinding Key="Enter" Command="{Binding DataContext.ConnectWifiCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding ElementName=TxtPassword}"/>
+                                                                </PasswordBox.InputBindings>
+                                                            </PasswordBox>
+                                                        </Border>
+                                                        <ui:Button Grid.Column="1" Content="Bağlan"
+                                                                   Command="{Binding DataContext.ConnectWifiCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                   CommandParameter="{Binding ElementName=TxtPassword}"
+                                                                   FontSize="11" Padding="10,4" Appearance="Primary"/>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+
+                <!-- Mic Active Indicator -->
+                <Border Margin="0,0,4,0" Padding="6,0" CornerRadius="5" Background="#15FF9500"
+                        VerticalAlignment="Center">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding IsMicrophoneActive}" Value="True"/>
+                                        <Condition Binding="{Binding Settings.ShowMicrophone}" Value="True"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="5" Height="5" Fill="#FF9500" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <ui:SymbolIcon Symbol="Mic24" FontSize="14" Foreground="#FF9500"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Camera Active Indicator -->
+                <Border Margin="0,0,4,0" Padding="6,0" CornerRadius="5" Background="#1534C759"
+                        VerticalAlignment="Center">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding IsCameraActive}" Value="True"/>
+                                        <Condition Binding="{Binding Settings.ShowCamera}" Value="True"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="5" Height="5" Fill="#34C759" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <ui:SymbolIcon Symbol="Camera24" FontSize="14" Foreground="#34C759"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- VPN Status -->
+                <Border Margin="0,0,4,0" Padding="6,0" CornerRadius="5" Background="#1530D158"
+                        VerticalAlignment="Center" ToolTip="{Binding VpnName}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding IsVpnConnected}" Value="True"/>
+                                        <Condition Binding="{Binding Settings.ShowVpn}" Value="True"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <ui:SymbolIcon Symbol="ShieldGlobe24" FontSize="14" Foreground="#30D158"/>
+                </Border>
+
+                <!-- Battery (only if laptop + setting enabled) -->
+                <Border Margin="0,0,2,0">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource TrayBox}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding Battery.HasBattery}" Value="True"/>
+                                        <Condition Binding="{Binding Settings.ShowBattery}" Value="True"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="{Binding Battery.Icon}" FontSize="15">
+                            <ui:SymbolIcon.Style>
+                                <Style TargetType="ui:SymbolIcon">
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Battery.IsCharging}" Value="True">
+                                            <Setter Property="Foreground" Value="#34C759"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Battery.Level}" Value="10">
+                                            <Setter Property="Foreground" Value="#FF3B30"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
+                    </StackPanel>
+                </Border>
+
+                <!-- Brightness (laptop only) -->
+                <ToggleButton x:Name="BtnBrightness" Style="{StaticResource TrayToggleBtn}" Margin="0,0,2,0"
+                              Visibility="{Binding HasBrightnessControl, Converter={StaticResource BoolToVis}}"
+                              ToolTip="{Binding BrightnessLevel, StringFormat='Parlaklık: {0}%'}">
+                    <ui:SymbolIcon Symbol="WeatherSunny24" FontSize="15" Foreground="#FFD60A"/>
+                </ToggleButton>
+                <Popup IsOpen="{Binding IsChecked, ElementName=BtnBrightness}" StaysOpen="False"
+                       PlacementTarget="{Binding ElementName=BtnBrightness}" Placement="Bottom"
+                       VerticalOffset="6" AllowsTransparency="True" PopupAnimation="Fade">
+                    <Border Style="{StaticResource PopupBorder}" Width="250" Padding="16,14">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <ui:SymbolIcon Symbol="WeatherSunny24" FontSize="18" Foreground="#FFD60A" Margin="0,0,10,0"/>
+                                <TextBlock Text="Parlaklık" FontWeight="Bold" FontSize="15" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding BrightnessLevel, StringFormat=' {0}%'}" FontSize="13"
+                                           Foreground="#888" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <Slider Minimum="0" Maximum="100" SmallChange="5" LargeChange="10"
+                                    Value="{Binding BrightnessLevel, Mode=TwoWay}"
+                                    ValueChanged="BrightnessSlider_Changed"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0">
+                                <ui:SymbolIcon Symbol="WeatherSunny16" FontSize="12" Foreground="#666"/>
+                                <TextBlock Text=" Düşük        Yüksek " FontSize="10" Foreground="#555" VerticalAlignment="Center"/>
+                                <ui:SymbolIcon Symbol="WeatherSunny24" FontSize="16" Foreground="#FFD60A"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+
+                <!-- Date and Time -->
+                <Border Style="{StaticResource TrayBox}" Margin="4,0,6,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding CurrentDate}" FontSize="12" Foreground="#888" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding CurrentTime}" FontWeight="Bold" FontSize="13.5" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>
