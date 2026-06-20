@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -48,15 +49,32 @@ public static class WindowHelper
         ["vlc"]             = "VLC",
         ["obs64"]           = "OBS Studio",
         ["obs32"]           = "OBS Studio",
+        ["Steam"]           = "Steam",
+        ["epicgameslauncher"] = "Epic Games",
+        ["msteams"]         = "Microsoft Teams",
+        ["outlook"]         = "Outlook",
+        ["onenote"]         = "OneNote",
+        ["acrobat"]         = "Adobe Acrobat",
+        ["photoshop"]       = "Photoshop",
+        ["premiere"]        = "Premiere Pro",
+        ["afterfx"]         = "After Effects",
+        ["audacity"]        = "Audacity",
     };
 
-    public static string GetActiveWindowTitle()
+    /// <summary>
+    /// Gets the name of the currently active (foreground) application.
+    /// Filters out the bar's own window so it never shows its own name.
+    /// </summary>
+    /// <param name="ownHwnd">The HWND of the menu bar window to exclude.</param>
+    public static string GetActiveWindowTitle(IntPtr ownHwnd = default)
     {
         const int nChars = 256;
-        StringBuilder Buff = new StringBuilder(nChars);
         IntPtr handle = GetForegroundWindow();
 
-        if (handle == IntPtr.Zero) return "Windows";
+        if (handle == IntPtr.Zero) return string.Empty;
+
+        // Filter out our own window — do not show "MenuBar" or our process name
+        if (ownHwnd != default && handle == ownHwnd) return string.Empty;
 
         // Try to get process name first (cleaner app name)
         try
@@ -67,29 +85,44 @@ public static class WindowHelper
                 var process = Process.GetProcessById((int)pid);
                 string procName = process.ProcessName;
 
+                // Skip if it's our own process
+                if (string.Equals(procName, "Windows-10-MenuBar", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(procName, "Windows_10_MenuBar", StringComparison.OrdinalIgnoreCase))
+                    return string.Empty;
+
                 if (_friendlyNames.TryGetValue(procName, out string? friendly))
                     return friendly;
 
-                // Use MainModule description if available
+                // Use MainModule description if available and short enough
                 try
                 {
                     string? desc = process.MainModule?.FileVersionInfo.FileDescription;
-                    if (!string.IsNullOrWhiteSpace(desc) && desc.Length < 40)
-                        return desc;
+                    if (!string.IsNullOrWhiteSpace(desc) && desc.Length < 50)
+                        return desc.Trim();
                 }
                 catch { }
 
-                // Fall back to capitalized process name
+                // Fall back to window title text
+                var buff = new StringBuilder(nChars);
+                if (GetWindowText(handle, buff, nChars) > 0)
+                {
+                    string title = buff.ToString().Trim();
+                    if (!string.IsNullOrWhiteSpace(title))
+                        return title;
+                }
+
+                // Last resort: capitalize process name
                 if (!string.IsNullOrWhiteSpace(procName))
-                    return char.ToUpper(procName[0]) + procName.Substring(1);
+                    return char.ToUpper(procName[0]) + procName[1..];
             }
         }
         catch { }
 
         // Ultimate fallback: window title
-        if (GetWindowText(handle, Buff, nChars) > 0)
-            return Buff.ToString();
+        var fallbackBuff = new StringBuilder(nChars);
+        if (GetWindowText(handle, fallbackBuff, nChars) > 0)
+            return fallbackBuff.ToString().Trim();
 
-        return "Windows";
+        return string.Empty;
     }
 }

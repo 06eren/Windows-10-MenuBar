@@ -1,0 +1,10 @@
+﻿KULLANIM SOZLESMESI
+
+Bu yazilim (Windows 10 Menu Bar), ERN YAZILIM tarafindan gelistirilmistir.
+Tum haklari ERN YAZILIM'a aittir.
+
+1. Bu uygulama kopyalanamaz, cogaltilamaz ve ticari amaclarla satilamaz.
+2. Yazilimin kaynak kodlari izinsiz kullanilamaz veya baska bir projeye entegre edilemez.
+3. Kullanici, bu yazilimi kullanirken yasalara uygun davranmayi kabul eder.
+
+ERN YAZILIM (C) 2026. Tum Haklari Saklidir.

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -17,6 +19,9 @@ using Microsoft.Win32;
 using System.Management;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Net.Http;
+using System.Text.Json;
+using NAudio.CoreAudioApi;
 
 namespace Windows_10_MenuBar.ViewModels;
 
@@ -61,12 +66,50 @@ public partial class BarViewModel : ObservableObject
     [ObservableProperty]
     private string _vpnName = string.Empty;
 
+    // ── Hardware Presence ──
+    [ObservableProperty]
+    private bool _hasBluetooth;
+
+    [ObservableProperty]
+    private bool _hasWifi;
+
+    [ObservableProperty]
+    private bool _isEthernet;
+
+    [ObservableProperty]
+    private string _networkName = "Ağ";
+
     // ── Brightness ──
     [ObservableProperty]
     private int _brightnessLevel = 100;
 
     [ObservableProperty]
     private bool _hasBrightnessControl;
+
+    // ── Volume ──
+    [ObservableProperty]
+    private int _volumeLevel = 100;
+
+    [ObservableProperty]
+    private Wpf.Ui.Common.SymbolRegular _volumeIcon = Wpf.Ui.Common.SymbolRegular.Speaker224;
+
+    // ── Weather ──
+    [ObservableProperty]
+    private string _weatherCondition = "Yükleniyor...";
+
+    [ObservableProperty]
+    private Wpf.Ui.Common.SymbolRegular _weatherIcon = Wpf.Ui.Common.SymbolRegular.WeatherSunny24;
+
+    [ObservableProperty]
+    private string _weatherTooltip = "Hava durumu bilgisi alınıyor...";
+
+    [ObservableProperty]
+    private ObservableCollection<string> _provinces = new();
+
+    [ObservableProperty]
+    private ObservableCollection<string> _districts = new();
+
+    private List<CityData> _allCities = new();
 
     // ── Settings ──
     [ObservableProperty]
@@ -81,10 +124,42 @@ public partial class BarViewModel : ObservableObject
     [ObservableProperty]
     private string _foregroundColor = "#FFFFFF"; // auto from wallpaper
 
+    // ── Calendar ──
+    [ObservableProperty]
+    private int _calendarYear;
+
+    [ObservableProperty]
+    private int _calendarMonth;
+
+    [ObservableProperty]
+    private string _calendarMonthName = "";
+
+    public ObservableCollection<CalendarDay> CalendarDays { get; } = new();
+
+    private static readonly Dictionary<(int month, int day), string> TurkishHolidays = new()
+    {
+        { (1, 1),   "Yılbaşı" },
+        { (4, 23),  "23 Nisan" },
+        { (5, 1),   "İşçi Bayramı" },
+        { (5, 19),  "19 Mayıs" },
+        { (7, 15),  "15 Temmuz" },
+        { (8, 30),  "30 Ağustos" },
+        { (10, 29), "Cumhuriyet Bayramı" },
+    };
+
     private DispatcherTimer _clockTimer;
 
     public BarViewModel()
     {
+        // Sync StartWithWindows with the actual registry state
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", writable: false);
+            var val = key?.GetValue("Windows10MenuBar");
+            Settings.StartWithWindows = (val != null);
+        }
+        catch { }
+
         // 1s Clock Loop
         _clockTimer = new DispatcherTimer
         {
@@ -94,22 +169,150 @@ public partial class BarViewModel : ObservableObject
         _clockTimer.Start();
         UpdateTime();
 
+        // Init calendar to today
+        ResetCalendarToToday();
+
+        LoadCities();
+
+        // Immediately re-draw clock when format preference changes
+        Settings.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(BarSettings.Use24HourClock))
+                UpdateTime();
+            else if (e.PropertyName == nameof(BarSettings.WeatherProvince))
+                UpdateDistricts();
+        };
+
         // Start hardware background tasks
-        _ = UpdateWifiLoopAsync();
         InitBluetoothWatcher();
-        _ = InitMediaControlsAsync();
         _ = UpdateSystemStatusLoopAsync();
+        _ = UpdateWifiLoopAsync();
+        _ = InitMediaControlsAsync();
+        _ = UpdateAudioLoopAsync();
+        _ = UpdateWeatherLoopAsync();
 
         // Brightness + Wallpaper
         InitBrightness();
         _ = DetectWallpaperColorAsync();
     }
 
+    private void LoadCities()
+    {
+        try
+        {
+            string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "cities.json");
+            if (System.IO.File.Exists(path))
+            {
+                var json = System.IO.File.ReadAllText(path);
+                _allCities = JsonSerializer.Deserialize<List<CityData>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+                
+                App.Current.Dispatcher.Invoke(() =>
+                {
+                    Provinces.Clear();
+                    foreach (var city in _allCities)
+                    {
+                        Provinces.Add(CultureInfo.CurrentCulture.TextInfo.ToTitleCase(city.name));
+                    }
+                });
+            }
+        }
+        catch { }
+    }
+
+    private void UpdateDistricts()
+    {
+        if (string.IsNullOrWhiteSpace(Settings.WeatherProvince)) return;
+        
+        var city = _allCities.FirstOrDefault(c => string.Equals(c.name, Settings.WeatherProvince, StringComparison.OrdinalIgnoreCase));
+        if (city != null && city.counties != null)
+        {
+            App.Current.Dispatcher.Invoke(() =>
+            {
+                Districts.Clear();
+                foreach (var county in city.counties)
+                {
+                    Districts.Add(CultureInfo.CurrentCulture.TextInfo.ToTitleCase(county));
+                }
+                
+                if (!Districts.Contains(Settings.WeatherDistrict))
+                {
+                    Settings.WeatherDistrict = string.Empty;
+                }
+            });
+        }
+    }
+
     private void UpdateTime()
     {
         var now = DateTime.Now;
         CurrentTime = Settings.Use24HourClock ? now.ToString("HH:mm") : now.ToString("hh:mm tt");
-        CurrentDate = now.ToString("dd MMM ddd");
+        CurrentDate = now.ToString("dd MMMM ddd", new CultureInfo("tr-TR"));
+    }
+
+    // ── Calendar Logic ──────────────────────────────────────────────
+
+    public void ResetCalendarToToday()
+    {
+        var today = DateTime.Today;
+        CalendarYear = today.Year;
+        CalendarMonth = today.Month;
+        BuildCalendarDays();
+    }
+
+    [RelayCommand]
+    private void NavigateCalendar(string delta)
+    {
+        if (!int.TryParse(delta, out int d)) return;
+        var dt = new DateTime(CalendarYear, CalendarMonth, 1).AddMonths(d);
+        CalendarYear = dt.Year;
+        CalendarMonth = dt.Month;
+        BuildCalendarDays();
+    }
+
+    private void BuildCalendarDays()
+    {
+        CalendarDays.Clear();
+        var today = DateTime.Today;
+        var culture = new CultureInfo("tr-TR");
+        var firstDay = new DateTime(CalendarYear, CalendarMonth, 1);
+        CalendarMonthName = firstDay.ToString("MMMM yyyy", culture);
+
+        // Monday-first week offset
+        int startOffset = ((int)firstDay.DayOfWeek + 6) % 7;
+        int daysInMonth = DateTime.DaysInMonth(CalendarYear, CalendarMonth);
+
+        // Empty cells before start
+        for (int i = 0; i < startOffset; i++)
+        {
+            var prevDate = firstDay.AddDays(-(startOffset - i));
+            CalendarDays.Add(new CalendarDay { Day = prevDate.Day, Date = prevDate, IsCurrentMonth = false, IsWeekend = prevDate.DayOfWeek == DayOfWeek.Saturday || prevDate.DayOfWeek == DayOfWeek.Sunday });
+        }
+
+        // Days of month
+        for (int d = 1; d <= daysInMonth; d++)
+        {
+            var date = new DateTime(CalendarYear, CalendarMonth, d);
+            bool isWeekend = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday;
+            TurkishHolidays.TryGetValue((CalendarMonth, d), out var holidayName);
+            CalendarDays.Add(new CalendarDay
+            {
+                Day = d,
+                Date = date,
+                IsToday = date == today,
+                IsCurrentMonth = true,
+                IsWeekend = isWeekend,
+                IsSpecialDay = holidayName != null,
+                SpecialDayName = holidayName
+            });
+        }
+
+        // Fill remaining to complete the grid (max 42 cells)
+        int remaining = 42 - CalendarDays.Count;
+        for (int i = 1; i <= remaining; i++)
+        {
+            var nextDate = new DateTime(CalendarYear, CalendarMonth, daysInMonth).AddDays(i);
+            CalendarDays.Add(new CalendarDay { Day = nextDate.Day, Date = nextDate, IsCurrentMonth = false, IsWeekend = nextDate.DayOfWeek == DayOfWeek.Saturday || nextDate.DayOfWeek == DayOfWeek.Sunday });
+        }
     }
 
     // ────────────────────────────── Brightness ──────────────────────────────
@@ -380,6 +583,144 @@ public partial class BarViewModel : ObservableObject
         }
     }
 
+    private async Task UpdateAudioLoopAsync()
+    {
+        while (true)
+        {
+            try
+            {
+                using var enumerator = new MMDeviceEnumerator();
+                var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                int vol = (int)(device.AudioEndpointVolume.MasterVolumeLevelScalar * 100);
+                bool isMuted = device.AudioEndpointVolume.Mute || vol == 0;
+                
+                App.Current.Dispatcher.Invoke(() =>
+                {
+                    VolumeLevel = vol;
+                    VolumeIcon = isMuted ? Wpf.Ui.Common.SymbolRegular.SpeakerMute24 : Wpf.Ui.Common.SymbolRegular.Speaker224;
+                });
+            }
+            catch { }
+            await Task.Delay(1000); // Check every second
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefreshWeatherAsync()
+    {
+        try
+        {
+            App.Current.Dispatcher.Invoke(() => WeatherCondition = "...");
+            
+            using var client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            
+            double lat = 0;
+            double lon = 0;
+            string city = "Şehir";
+
+            if (string.IsNullOrWhiteSpace(Settings.WeatherProvince))
+            {
+                // 1. Get Lat/Lon from IP
+                var geoJson = await client.GetStringAsync("http://ip-api.com/json/");
+                var geoData = JsonSerializer.Deserialize<JsonElement>(geoJson);
+                if (geoData.TryGetProperty("lat", out var latProp) && geoData.TryGetProperty("lon", out var lonProp))
+                {
+                    lat = latProp.GetDouble();
+                    lon = lonProp.GetDouble();
+                    city = geoData.TryGetProperty("city", out var cityProp) ? cityProp.GetString() ?? "Şehir" : "Şehir";
+                }
+            }
+            else
+            {
+                // 1. Get Lat/Lon from Geocoding API
+                string query = string.IsNullOrWhiteSpace(Settings.WeatherDistrict) 
+                    ? $"{Settings.WeatherProvince}, Turkey"
+                    : $"{Settings.WeatherDistrict}, {Settings.WeatherProvince}, Turkey";
+                    
+                string url = $"https://nominatim.openstreetmap.org/search?q={Uri.EscapeDataString(query)}&format=json&limit=1";
+                client.DefaultRequestHeaders.Add("User-Agent", "Windows10MenuBarApp/1.0");
+                
+                var geoJson = await client.GetStringAsync(url);
+                var results = JsonSerializer.Deserialize<JsonElement>(geoJson);
+                
+                if (results.ValueKind == JsonValueKind.Array && results.GetArrayLength() > 0)
+                {
+                    var firstResult = results[0];
+                    if (firstResult.TryGetProperty("lat", out var latProp) && firstResult.TryGetProperty("lon", out var lonProp))
+                    {
+                        lat = double.Parse(latProp.GetString() ?? "0", CultureInfo.InvariantCulture);
+                        lon = double.Parse(lonProp.GetString() ?? "0", CultureInfo.InvariantCulture);
+                        city = string.IsNullOrWhiteSpace(Settings.WeatherDistrict) ? Settings.WeatherProvince : Settings.WeatherDistrict;
+                    }
+                }
+                else
+                {
+                    // Fallback to cities.json coords if Nominatim fails
+                    var knownCity = _allCities.FirstOrDefault(c => string.Equals(c.name, Settings.WeatherProvince, StringComparison.OrdinalIgnoreCase));
+                    if (knownCity != null && !string.IsNullOrEmpty(knownCity.latitude))
+                    {
+                        lat = double.Parse(knownCity.latitude, CultureInfo.InvariantCulture);
+                        lon = double.Parse(knownCity.longitude, CultureInfo.InvariantCulture);
+                        city = string.IsNullOrWhiteSpace(Settings.WeatherDistrict) ? Settings.WeatherProvince : Settings.WeatherDistrict;
+                    }
+                    else
+                    {
+                        App.Current.Dispatcher.Invoke(() =>
+                        {
+                            WeatherCondition = "Bulunamadı";
+                            WeatherTooltip = $"{query} bulunamadı.";
+                        });
+                        return;
+                    }
+                }
+            }
+
+            // 2. Get Weather from Open-Meteo
+            var weatherJson = await client.GetStringAsync($"https://api.open-meteo.com/v1/forecast?latitude={lat.ToString(CultureInfo.InvariantCulture)}&longitude={lon.ToString(CultureInfo.InvariantCulture)}&current_weather=true");
+            var weatherData = JsonSerializer.Deserialize<JsonElement>(weatherJson);
+            
+            if (weatherData.TryGetProperty("current_weather", out var current))
+            {
+                double temp = current.GetProperty("temperature").GetDouble();
+                int code = current.GetProperty("weathercode").GetInt32();
+                
+                App.Current.Dispatcher.Invoke(() =>
+                {
+                    WeatherCondition = $"{Math.Round(temp)}°C";
+                    WeatherTooltip = $"{city} - Hava Durumu";
+                    WeatherIcon = GetWeatherIconFromCode(code);
+                });
+            }
+        }
+        catch 
+        {
+            App.Current.Dispatcher.Invoke(() => WeatherCondition = "Hata");
+        }
+    }
+
+    private async Task UpdateWeatherLoopAsync()
+    {
+        while (true)
+        {
+            await RefreshWeatherAsync();
+            await Task.Delay(TimeSpan.FromMinutes(30)); // Update every 30 minutes
+        }
+    }
+
+    private Wpf.Ui.Common.SymbolRegular GetWeatherIconFromCode(int code)
+    {
+        // WMO Weather interpretation codes
+        if (code == 0) return Wpf.Ui.Common.SymbolRegular.WeatherSunny24;
+        if (code == 1 || code == 2) return Wpf.Ui.Common.SymbolRegular.WeatherPartlyCloudyDay24;
+        if (code == 3) return Wpf.Ui.Common.SymbolRegular.WeatherCloudy24;
+        if (code >= 45 && code <= 48) return Wpf.Ui.Common.SymbolRegular.WeatherFog24;
+        if (code >= 51 && code <= 67) return Wpf.Ui.Common.SymbolRegular.WeatherRainShowersDay24;
+        if (code >= 71 && code <= 82) return Wpf.Ui.Common.SymbolRegular.WeatherSnowflake24;
+        if (code >= 95) return Wpf.Ui.Common.SymbolRegular.WeatherThunderstorm24;
+        return Wpf.Ui.Common.SymbolRegular.WeatherSunny24;
+    }
+
     [RelayCommand]
     private void OpenTaskView()
     {
@@ -426,13 +767,17 @@ public partial class BarViewModel : ObservableObject
             while (true)
             {
                 var adapters = await WiFiAdapter.FindAllAdaptersAsync();
-                if (adapters.Count == 0)
+                HasWifi = adapters.Count > 0;
+
+                if (!HasWifi)
                 {
                     App.Current.Dispatcher.Invoke(() =>
                     {
                         IsWifiConnected = false;
                         AvailableNetworks.Clear();
                         bool hasNetwork = System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable();
+                        IsEthernet = hasNetwork;
+                        NetworkName = hasNetwork ? "Ethernet" : "Bağlantı Yok";
                         CurrentNetworkIcon = hasNetwork ? Wpf.Ui.Common.SymbolRegular.Desktop24 : Wpf.Ui.Common.SymbolRegular.Globe24;
                     });
                     await Task.Delay(5000);
@@ -449,15 +794,18 @@ public partial class BarViewModel : ObservableObject
                     App.Current.Dispatcher.Invoke(() =>
                     {
                         IsWifiConnected = connectedProfile != null;
-
+                        IsEthernet = false; // Wi-Fi donanımı var
+                        
                         // Update Icon dynamically based on signal strength
                         bool hasNetwork = System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable();
                         if (!hasNetwork)
                         {
+                            NetworkName = "Bağlantı Yok";
                             CurrentNetworkIcon = Wpf.Ui.Common.SymbolRegular.WifiOff24;
                         }
                         else if (IsWifiConnected)
                         {
+                            NetworkName = connectedProfile?.ProfileName ?? "Wi-Fi";
                             var connNet = networks.FirstOrDefault(n => n.Ssid == connectedProfile?.ProfileName);
                             int bars = connNet?.SignalBars ?? 4;
                             CurrentNetworkIcon = bars >= 4 ? Wpf.Ui.Common.SymbolRegular.Wifi424
@@ -467,7 +815,10 @@ public partial class BarViewModel : ObservableObject
                         }
                         else
                         {
-                            CurrentNetworkIcon = Wpf.Ui.Common.SymbolRegular.WifiOff24;
+                            // Wi-Fi var ama bağlı değil, belki Ethernet ile bağlı
+                            IsEthernet = hasNetwork;
+                            NetworkName = hasNetwork ? "Ethernet" : "Bağlantı Yok";
+                            CurrentNetworkIcon = hasNetwork ? Wpf.Ui.Common.SymbolRegular.Desktop24 : Wpf.Ui.Common.SymbolRegular.WifiOff24;
                         }
 
                         var incoming = networks.OrderByDescending(n => n.NetworkRssiInDecibelMilliwatts).ToList();
@@ -509,12 +860,16 @@ public partial class BarViewModel : ObservableObject
         catch { /* Handle permissions/unavailable */ }
     }
 
-    private void InitBluetoothWatcher()
+    private async void InitBluetoothWatcher()
     {
         try
         {
+            var adapter = await Windows.Devices.Bluetooth.BluetoothAdapter.GetDefaultAsync();
+            HasBluetooth = adapter != null;
+            if (!HasBluetooth) return;
+
             // Watch for Bluetooth devices
-            string selector = BluetoothDevice.GetDeviceSelectorFromPairingState(true);
+            string selector = Windows.Devices.Bluetooth.BluetoothDevice.GetDeviceSelectorFromPairingState(true);
             var watcher = DeviceInformation.CreateWatcher(selector);
             
             watcher.Added += (s, a) => App.Current.Dispatcher.Invoke(() => 
@@ -773,4 +1128,13 @@ public partial class BarViewModel : ObservableObject
         }
         catch { }
     }
+}
+
+public class CityData
+{
+    public string name { get; set; } = string.Empty;
+    public string plate { get; set; } = string.Empty;
+    public string latitude { get; set; } = string.Empty;
+    public string longitude { get; set; } = string.Empty;
+    public List<string> counties { get; set; } = new();
 }

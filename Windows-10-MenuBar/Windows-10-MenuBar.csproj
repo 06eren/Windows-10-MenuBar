@@ -12,8 +12,15 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="NAudio.Core" Version="2.3.0" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.3.0" />
     <PackageReference Include="System.Management" Version="10.0.7" />
     <PackageReference Include="WPF-UI" Version="2.1.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Assets\cities.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

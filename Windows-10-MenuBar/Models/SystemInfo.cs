@@ -10,6 +10,18 @@ public partial class WifiInfo : ObservableObject
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private string _statusText = string.Empty;
     [ObservableProperty] private bool _isPasswordPromptVisible;
+
+    /// <summary>Returns a Fluent UI symbol matching the Wi-Fi signal bars (1-4).</summary>
+    public Wpf.Ui.Common.SymbolRegular SignalIcon =>
+        SignalStrength >= 4 ? Wpf.Ui.Common.SymbolRegular.Wifi424
+        : SignalStrength == 3 ? Wpf.Ui.Common.SymbolRegular.Wifi324
+        : SignalStrength == 2 ? Wpf.Ui.Common.SymbolRegular.Wifi224
+        : Wpf.Ui.Common.SymbolRegular.Wifi124;
+
+    partial void OnSignalStrengthChanged(byte value)
+    {
+        OnPropertyChanged(nameof(SignalIcon));
+    }
 }
 
 public partial class BluetoothDeviceInfo : ObservableObject

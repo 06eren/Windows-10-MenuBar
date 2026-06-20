@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Windows_10_MenuBar.Interop;
@@ -12,8 +13,11 @@ namespace Windows_10_MenuBar;
 
 public partial class MainWindow : Window
 {
-    private BarViewModel _viewModel;
-    private DispatcherTimer _windowTitleTimer;
+    private BarViewModel _viewModel = null!;
+    private DispatcherTimer? _windowTitleTimer;
+    private DispatcherTimer? _fullscreenTimer;
+    private DispatcherTimer? _autoHideTimer;
+    private IntPtr _ownHwnd;
 
     public MainWindow()
     {
@@ -21,18 +25,18 @@ public partial class MainWindow : Window
         _viewModel = new BarViewModel();
         DataContext = _viewModel;
 
-        // Apply saved settings
+        // Apply saved settings (color / opacity)
         ApplyBarSettings();
 
-        this.Width = SystemParameters.PrimaryScreenWidth;
-        this.Top = 0;
-        this.Left = 0;
+        this.Width  = SystemParameters.PrimaryScreenWidth;
+        this.Top    = 0;
+        this.Left   = 0;
 
-        Loaded += MainWindow_Loaded;
+        Loaded  += MainWindow_Loaded;
         Closing += MainWindow_Closing;
-        Closed += MainWindow_Closed;
+        Closed  += MainWindow_Closed;
 
-        // Watch for settings changes to auto-apply
+        // Watch for settings changes to auto-apply bar visuals
         _viewModel.PropertyChanged += (s, e) =>
         {
             if (e.PropertyName is nameof(_viewModel.BarBackground) or nameof(_viewModel.BarOpacity))
@@ -47,7 +51,7 @@ public partial class MainWindow : Window
             if (BarBrush != null)
             {
                 var color = (Color)ColorConverter.ConvertFromString(_viewModel.BarBackground);
-                BarBrush.Color = color;
+                BarBrush.Color   = color;
                 BarBrush.Opacity = _viewModel.BarOpacity;
             }
             this.Height = _viewModel.Settings.BarHeight;
@@ -58,48 +62,128 @@ public partial class MainWindow : Window
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        // Cache our own HWND for filtering in title/fullscreen checks
+        _ownHwnd = new WindowInteropHelper(this).Handle;
+
+        // Hook WM_WINDOWPOSCHANGED so the bar always snaps back to top-left
+        var hwndSource = HwndSource.FromHwnd(_ownHwnd);
+        hwndSource?.AddHook(WndProc);
+
         AppBarInterop.RegisterBar(this, _viewModel.Settings.BarHeight);
 
+        // Active window title — 500ms poll
         _windowTitleTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(500)
         };
         _windowTitleTimer.Tick += (s, ev) =>
         {
-            var title = WindowHelper.GetActiveWindowTitle();
+            var title = WindowHelper.GetActiveWindowTitle(_ownHwnd);
             if (!string.IsNullOrWhiteSpace(title))
                 _viewModel.ActiveWindowTitle = title;
         };
         _windowTitleTimer.Start();
+
+        // Fullscreen detection — 750ms poll
+        _fullscreenTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(750)
+        };
+        _fullscreenTimer.Tick += FullscreenTimer_Tick;
+        _fullscreenTimer.Start();
 
         // Auto-hide setup
         if (_viewModel.Settings.AutoHide)
             SetupAutoHide();
     }
 
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_WINDOWPOSCHANGING = 0x0046;
+        if (msg == WM_WINDOWPOSCHANGING)
+        {
+            var pos = System.Runtime.InteropServices.Marshal.PtrToStructure<WINDOWPOS>(lParam);
+            
+            // Eğer pencere hareket ettirilmeye çalışılıyorsa, X ve Y'yi 0'a zorla
+            if ((pos.flags & 0x0002) == 0) // 0x0002 is SWP_NOMOVE
+            {
+                pos.x = 0;
+                pos.y = 0;
+                System.Runtime.InteropServices.Marshal.StructureToPtr(pos, lParam, false);
+            }
+        }
+        return IntPtr.Zero;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct WINDOWPOS
+    {
+        public IntPtr hwnd;
+        public IntPtr hwndInsertAfter;
+        public int x;
+        public int y;
+        public int cx;
+        public int cy;
+        public uint flags;
+    }
+
+    private void FullscreenTimer_Tick(object? sender, EventArgs e)
+    {
+        bool fullscreen = NativeMethods.IsFullscreenAppRunning(_ownHwnd);
+        bool shouldHide = fullscreen && _viewModel.Settings.HideOnFullscreen;
+
+        // Toggle Topmost and visibility
+        if (shouldHide)
+        {
+            if (this.Topmost)
+            {
+                this.Topmost = false;
+                // Unregister AppBar while hidden to avoid interfering with fullscreen
+                AppBarInterop.UnregisterBar(this);
+            }
+        }
+        else
+        {
+            if (!this.Topmost)
+            {
+                this.Topmost = true;
+                AppBarInterop.RegisterBar(this, _viewModel.Settings.BarHeight);
+            }
+        }
+    }
+
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        _fullscreenTimer?.Stop();
+        _windowTitleTimer?.Stop();
+        _autoHideTimer?.Stop();
         AppBarInterop.UnregisterBar(this);
     }
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
         _windowTitleTimer?.Stop();
+        _fullscreenTimer?.Stop();
+        _autoHideTimer?.Stop();
     }
 
     // ── Auto-hide ────────────────────────────────────────────────────────────
 
     private void SetupAutoHide()
     {
+        // Stop any existing autohide timer first
+        _autoHideTimer?.Stop();
+        _autoHideTimer = null;
+
         this.Opacity = 0;
-        var showTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-        showTimer.Tick += (s, e) =>
+        _autoHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        _autoHideTimer.Tick += (s, e) =>
         {
             GetCursorPos(out var pt);
-            bool nearTop = pt.Y <= 4;
+            bool nearTop = pt.Y <= _viewModel.Settings.BarHeight + 2;
             this.Opacity = nearTop ? 1 : 0;
         };
-        showTimer.Start();
+        _autoHideTimer.Start();
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -118,8 +202,8 @@ public partial class MainWindow : Window
     private void OpenSettings_Click(object sender, RoutedEventArgs e)
     {
         SettingsPopup.PlacementTarget = this;
-        SettingsPopup.HorizontalOffset = SystemParameters.PrimaryScreenWidth - 375;
-        SettingsPopup.VerticalOffset = this.Height;
+        SettingsPopup.HorizontalOffset = SystemParameters.PrimaryScreenWidth - 380;
+        SettingsPopup.VerticalOffset   = this.Height;
         SettingsPopup.IsOpen = true;
     }
 
@@ -134,11 +218,7 @@ public partial class MainWindow : Window
     {
         if (_viewModel == null) return;
         _viewModel.BarOpacity = e.NewValue;
-        try
-        {
-            BarBrush.Opacity = e.NewValue;
-        }
-        catch { }
+        try { BarBrush.Opacity = e.NewValue; } catch { }
         SettingsService.Save();
     }
 
@@ -171,7 +251,11 @@ public partial class MainWindow : Window
         if (_viewModel.Settings.AutoHide)
             SetupAutoHide();
         else
+        {
+            _autoHideTimer?.Stop();
+            _autoHideTimer = null;
             this.Opacity = 1;
+        }
     }
 
     private void StartWithWindows_Changed(object sender, RoutedEventArgs e)
@@ -179,23 +263,35 @@ public partial class MainWindow : Window
         _viewModel.ApplyStartWithWindowsCommand.Execute(_viewModel.Settings.StartWithWindows);
     }
 
-    // ── Wi-Fi Popup Reset ─────────────────────────────────────────────────────
+    // ── Close ────────────────────────────────────────────────────────────────
 
     private void BtnClose_Click(object sender, RoutedEventArgs e)
     {
         this.Close();
     }
 
+    // ── Wi-Fi Popup Reset ─────────────────────────────────────────────────────
+
     private void PopupWifi_Closed(object sender, EventArgs e)
     {
-        if (_viewModel != null)
+        if (_viewModel == null) return;
+        foreach (var net in _viewModel.AvailableNetworks)
         {
-            foreach (var net in _viewModel.AvailableNetworks)
-            {
-                net.IsPasswordPromptVisible = false;
-                if (net.StatusText == "Şifre Gerekli")
-                    net.StatusText = "";
-            }
+            net.IsPasswordPromptVisible = false;
+            if (net.StatusText == "Şifre Gerekli")
+                net.StatusText = "";
         }
+    }
+
+    // ── Calendar Popup Reset ──────────────────────────────────────────────────
+
+    private void CalendarPopup_Opened(object sender, EventArgs e)
+    {
+        _viewModel?.ResetCalendarToToday();
+    }
+
+    private void CalendarTodayBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel?.ResetCalendarToToday();
     }
 }
